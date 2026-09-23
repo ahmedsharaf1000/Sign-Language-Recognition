@@ -1,0 +1,109 @@
+import os
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, BatchNormalization
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+
+# -------------------------
+# 1️⃣ إعداد البيانات
+# -------------------------
+DATA_DIR = './data'
+IMG_SIZE = (64, 64)  # حجم الصورة
+BATCH_SIZE = 32
+
+# Augmentation للصور التدريبية
+train_datagen = ImageDataGenerator(
+    rescale=1./255,
+    validation_split=0.2,  # 80% train, 20% validation
+    rotation_range=15,
+    width_shift_range=0.1,
+    height_shift_range=0.1,
+    zoom_range=0.1,
+    horizontal_flip=True
+)
+
+train_generator = train_datagen.flow_from_directory(
+    DATA_DIR,
+    target_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='training',
+    shuffle=True
+)
+
+validation_generator = train_datagen.flow_from_directory(
+    DATA_DIR,
+    target_size=IMG_SIZE,
+    batch_size=BATCH_SIZE,
+    class_mode='categorical',
+    subset='validation',
+    shuffle=False
+)
+
+# -------------------------
+# 2️⃣ بناء موديل CNN
+# -------------------------
+num_classes = len(train_generator.class_indices)
+
+model = Sequential([
+    Conv2D(32, (3,3), activation='relu', input_shape=(*IMG_SIZE,3)),
+    BatchNormalization(),
+    MaxPooling2D((2,2)),
+
+    Conv2D(64, (3,3), activation='relu'),
+    BatchNormalization(),
+    MaxPooling2D((2,2)),
+
+    Conv2D(128, (3,3), activation='relu'),
+    BatchNormalization(),
+    MaxPooling2D((2,2)),
+
+    Flatten(),
+    Dense(256, activation='relu'),
+    Dropout(0.5),
+    Dense(num_classes, activation='softmax')
+])
+
+model.compile(
+    optimizer='adam',
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+model.summary()
+
+# -------------------------
+# 3️⃣ Callbacks
+# -------------------------
+checkpoint = ModelCheckpoint(
+    'asl_cnn_model.h5', monitor='val_accuracy', save_best_only=True, verbose=1
+)
+early_stop = EarlyStopping(
+    monitor='val_accuracy', patience=10, restore_best_weights=True, verbose=1
+)
+
+# -------------------------
+# 4️⃣ تدريب الموديل
+# -------------------------
+history = model.fit(
+    train_generator,
+    validation_data=validation_generator,
+    epochs=50,
+    callbacks=[checkpoint, early_stop]
+)
+
+# -------------------------
+# 5️⃣ تقييم الموديل
+# -------------------------
+val_loss, val_acc = model.evaluate(validation_generator)
+print(f"\nValidation Accuracy: {val_acc*100:.2f}%")
+
+# -------------------------
+# 6️⃣ حفظ الكلاس اندكس
+# -------------------------
+import pickle
+with open('class_indices.pickle', 'wb') as f:
+    pickle.dump(train_generator.class_indices, f)
+print("Class indices saved to 'class_indices.pickle'")
